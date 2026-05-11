@@ -11,6 +11,27 @@ type Conversation = {
   updated_at?: string;
 };
 
+type ConversationMessage = {
+  id: string;
+  role: "user" | "assistant" | "system";
+  agent_id?: AgentId | null;
+  content: string;
+  routing_json?: unknown;
+  structured_output?: unknown;
+  citations?: unknown;
+  tokens_in?: number | null;
+  tokens_out?: number | null;
+  latency_ms?: number | null;
+  cost_usd?: number | null;
+  created_at?: string;
+};
+
+type ConversationDetail = Conversation & {
+  created_at?: string;
+  metadata?: unknown;
+  messages: ConversationMessage[];
+};
+
 type ChatResponse = {
   conversation_id: string;
   message_id: string;
@@ -83,6 +104,8 @@ export default function DashboardClient() {
   );
   const [attachmentText, setAttachmentText] = useState("Memorial técnico: carga de vento na cobertura exige validação por norma aplicável.");
   const [conversations, setConversations] = useState<ApiState<{ conversations: Conversation[] }>>(emptyState);
+  const [conversationDetail, setConversationDetail] = useState<ApiState<{ conversation: ConversationDetail }>>(emptyState);
+  const [conversationMutation, setConversationMutation] = useState<ApiState<unknown>>(emptyState);
   const [chat, setChat] = useState<ApiState<ChatResponse>>(emptyState);
   const [profile, setProfile] = useState<ApiState<unknown>>(emptyState);
   const [attachment, setAttachment] = useState<ApiState<unknown>>(emptyState);
@@ -125,6 +148,51 @@ export default function DashboardClient() {
     }
   }
 
+  async function loadConversationDetails(nextConversationId = conversationId) {
+    if (!nextConversationId) {
+      setConversationDetail({ loading: false, error: "Selecione uma conversa para carregar o histórico." });
+      return;
+    }
+
+    setConversationDetail({ loading: true });
+    try {
+      const payload = await parseApiResponse<{ conversation: ConversationDetail }>(
+        await fetch(`/api/conversations/${nextConversationId}?limit=30`, { headers: authHeaders(token) })
+      );
+      setConversationDetail({ loading: false, data: payload });
+    } catch (error) {
+      setConversationDetail({ loading: false, error: error instanceof Error ? error.message : "Erro desconhecido" });
+    }
+  }
+
+  async function updateConversationStatus(status: "active" | "archived" | "deleted") {
+    if (!conversationId) {
+      setConversationMutation({ loading: false, error: "Selecione uma conversa antes de alterar o status." });
+      return;
+    }
+
+    setConversationMutation({ loading: true });
+    try {
+      const payload = await parseApiResponse<unknown>(
+        await fetch(`/api/conversations/${conversationId}`, {
+          method: status === "deleted" ? "DELETE" : "PATCH",
+          headers: authHeaders(token),
+          body: status === "deleted" ? undefined : JSON.stringify({ status })
+        })
+      );
+      setConversationMutation({ loading: false, data: payload });
+      if (status === "deleted") {
+        setConversationDetail(emptyState);
+        persistConversation("");
+      } else {
+        void loadConversationDetails(conversationId);
+      }
+      void loadConversations();
+    } catch (error) {
+      setConversationMutation({ loading: false, error: error instanceof Error ? error.message : "Erro desconhecido" });
+    }
+  }
+
   async function submitChat(event: FormEvent) {
     event.preventDefault();
     setChat({ loading: true });
@@ -139,6 +207,7 @@ export default function DashboardClient() {
       persistConversation(payload.conversation_id);
       setChat({ loading: false, data: payload });
       void loadConversations();
+      void loadConversationDetails(payload.conversation_id);
     } catch (error) {
       setChat({ loading: false, error: error instanceof Error ? error.message : "Erro desconhecido" });
     }
@@ -366,6 +435,7 @@ export default function DashboardClient() {
                   onClick={() => {
                     persistConversation(conversation.id);
                     setAgentId(conversation.agent_id);
+                    void loadConversationDetails(conversation.id);
                   }}
                 >
                   <span className="block font-semibold text-white">{conversation.title}</span>
@@ -374,6 +444,16 @@ export default function DashboardClient() {
               ))}
               {conversations.error && <p className="text-sm text-red-300">{conversations.error}</p>}
             </div>
+            <ConversationHistoryPanel
+              activeConversationId={conversationId}
+              mutationState={conversationMutation}
+              onArchive={() => updateConversationStatus("archived")}
+              onDelete={() => updateConversationStatus("deleted")}
+              onLoad={() => loadConversationDetails()}
+              onReactivate={() => updateConversationStatus("active")}
+              state={conversationDetail}
+              tokenPresent={Boolean(token)}
+            />
           </section>
 
           <section className="rounded-3xl border border-white/10 bg-white/5 p-6">
@@ -451,6 +531,80 @@ export default function DashboardClient() {
 
 
 
+function ConversationHistoryPanel({
+  activeConversationId,
+  mutationState,
+  onArchive,
+  onDelete,
+  onLoad,
+  onReactivate,
+  state,
+  tokenPresent
+}: {
+  activeConversationId: string;
+  mutationState: ApiState<unknown>;
+  onArchive: () => void;
+  onDelete: () => void;
+  onLoad: () => void;
+  onReactivate: () => void;
+  state: ApiState<{ conversation: ConversationDetail }>;
+  tokenPresent: boolean;
+}) {
+  const conversation = state.data?.conversation;
+
+  return (
+    <section className="mt-5 rounded-2xl border border-slate-700 bg-slate-950/70 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-cyan-300">Histórico ativo</h3>
+          <p className="mt-1 text-xs text-slate-400">Carregue mensagens, metadados e status da conversa selecionada.</p>
+        </div>
+        <button className="rounded-lg bg-cyan-300 px-3 py-2 text-xs font-semibold text-slate-950" disabled={!tokenPresent || !activeConversationId || state.loading} type="button" onClick={onLoad}>
+          Carregar
+        </button>
+      </div>
+
+      {conversation && (
+        <>
+          <div className="mt-4 rounded-xl border border-slate-800 bg-slate-900/80 p-3 text-xs text-slate-300">
+            <p className="font-semibold text-white">{conversation.title}</p>
+            <p className="mt-1">{conversation.agent_id} · {conversation.status} · {conversation.messages.length} mensagens</p>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button className="rounded-lg border border-slate-600 px-3 py-2 text-xs font-semibold" disabled={!tokenPresent || mutationState.loading || conversation.status === "archived"} type="button" onClick={onArchive}>
+              Arquivar
+            </button>
+            <button className="rounded-lg border border-emerald-400/50 px-3 py-2 text-xs font-semibold text-emerald-200" disabled={!tokenPresent || mutationState.loading || conversation.status === "active"} type="button" onClick={onReactivate}>
+              Reativar
+            </button>
+            <button className="rounded-lg border border-red-400/50 px-3 py-2 text-xs font-semibold text-red-200" disabled={!tokenPresent || mutationState.loading} type="button" onClick={onDelete}>
+              Excluir
+            </button>
+          </div>
+          <div className="mt-4 max-h-96 space-y-3 overflow-auto pr-1">
+            {conversation.messages.map((message) => (
+              <article key={message.id} className={`rounded-2xl border p-3 ${message.role === "assistant" ? "border-cyan-400/20 bg-cyan-400/10" : "border-slate-700 bg-slate-900"}`}>
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-[10px] uppercase tracking-wide text-slate-400">
+                  <span>{message.role}{message.agent_id ? ` · ${message.agent_id}` : ""}</span>
+                  {message.latency_ms ? <span>{Math.round(message.latency_ms)} ms</span> : null}
+                </div>
+                <p className="whitespace-pre-wrap text-xs leading-5 text-slate-100">{message.content}</p>
+                {(message.tokens_in || message.tokens_out || message.cost_usd) && (
+                  <p className="mt-2 text-[10px] text-slate-500">
+                    tokens {message.tokens_in || 0}/{message.tokens_out || 0} · ${Number(message.cost_usd || 0).toFixed(4)}
+                  </p>
+                )}
+              </article>
+            ))}
+          </div>
+        </>
+      )}
+
+      <ResultPanel title="Status da conversa" state={mutationState} compact />
+      <ResultPanel title="Payload da conversa" state={state} compact />
+    </section>
+  );
+}
 
 function PromptAdminPanel({
   active,

@@ -103,7 +103,7 @@ vercel deploy
 
 ## Interface operacional
 
-Além da landing page, o MVP inclui `/dashboard` para testar chat, conversas, feedback, perfil técnico, ingestão de anexos, gestão de versões de prompts admin e métricas administrativas usando um JWT Supabase do usuário.
+Além da landing page, o MVP inclui `/dashboard` para testar chat, histórico e status de conversas, feedback, perfil técnico, ingestão de anexos, gestão de versões de prompts admin e métricas administrativas usando um JWT Supabase do usuário.
 
 ## API
 
