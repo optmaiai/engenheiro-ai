@@ -24,6 +24,18 @@ type ApiState<T> = {
   loading: boolean;
 };
 
+type DashboardMetricsPayload = {
+  metrics: null | {
+    requests_total: number;
+    requests_failed: number;
+    avg_latency_ms: number;
+    total_tokens: number;
+    total_cost_usd: number;
+    routing_acceptance_rate: number;
+    top_guardrails_triggered: Array<{ name: string; count: number }>;
+  };
+};
+
 const emptyState = { loading: false };
 
 function authHeaders(token: string) {
@@ -56,6 +68,8 @@ export default function DashboardClient() {
   const [chat, setChat] = useState<ApiState<ChatResponse>>(emptyState);
   const [profile, setProfile] = useState<ApiState<unknown>>(emptyState);
   const [attachment, setAttachment] = useState<ApiState<unknown>>(emptyState);
+  const [metricsDays, setMetricsDays] = useState(7);
+  const [metrics, setMetrics] = useState<ApiState<DashboardMetricsPayload>>(emptyState);
 
   const selectedAgent = useMemo(() => AGENTS[agentId], [agentId]);
 
@@ -136,6 +150,18 @@ export default function DashboardClient() {
       setAttachment({ loading: false, data: payload });
     } catch (error) {
       setAttachment({ loading: false, error: error instanceof Error ? error.message : "Erro desconhecido" });
+    }
+  }
+
+  async function loadMetrics() {
+    setMetrics({ loading: true });
+    try {
+      const payload = await parseApiResponse<DashboardMetricsPayload>(
+        await fetch(`/api/metrics?days=${metricsDays}`, { headers: authHeaders(token) })
+      );
+      setMetrics({ loading: false, data: payload });
+    } catch (error) {
+      setMetrics({ loading: false, error: error instanceof Error ? error.message : "Erro desconhecido" });
     }
   }
 
@@ -260,9 +286,55 @@ export default function DashboardClient() {
             </button>
             <ResultPanel title="Anexo" state={attachment} compact />
           </section>
+
+          <section className="rounded-3xl border border-cyan-400/20 bg-cyan-400/10 p-6">
+            <h2 className="text-xl font-semibold text-white">Métricas admin</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-300">Use um JWT permitido em <code>ADMIN_EMAILS</code> para consultar agregados operacionais.</p>
+            <label className="mt-4 block">
+              <span className="mb-2 block text-sm font-medium text-slate-300">Janela em dias</span>
+              <input
+                className="w-full rounded-xl border border-slate-700 bg-slate-900 p-3 text-sm"
+                min={1}
+                max={90}
+                type="number"
+                value={metricsDays}
+                onChange={(event) => setMetricsDays(Number(event.target.value || 7))}
+              />
+            </label>
+            <button className="mt-3 rounded-xl bg-cyan-300 px-4 py-2 text-sm font-semibold text-slate-950" type="button" onClick={loadMetrics} disabled={!token || metrics.loading}>
+              Carregar métricas
+            </button>
+            <MetricsSummary metrics={metrics.data?.metrics} />
+            <ResultPanel title="Payload de métricas" state={metrics} compact />
+          </section>
         </aside>
       </section>
     </main>
+  );
+}
+
+
+function MetricsSummary({ metrics }: { metrics?: DashboardMetricsPayload["metrics"] }) {
+  if (!metrics) return null;
+
+  const cards = [
+    ["Requests", metrics.requests_total],
+    ["Falhas", metrics.requests_failed],
+    ["Latência média", `${Math.round(metrics.avg_latency_ms || 0)} ms`],
+    ["Tokens", metrics.total_tokens],
+    ["Custo", `$${Number(metrics.total_cost_usd || 0).toFixed(4)}`],
+    ["Aceite routing", `${Math.round(metrics.routing_acceptance_rate || 0)}%`]
+  ];
+
+  return (
+    <div className="mt-4 grid grid-cols-2 gap-2">
+      {cards.map(([label, value]) => (
+        <div key={label} className="rounded-xl border border-cyan-400/20 bg-slate-950/70 p-3">
+          <p className="text-[10px] uppercase tracking-wide text-slate-400">{label}</p>
+          <p className="mt-1 text-lg font-semibold text-white">{value}</p>
+        </div>
+      ))}
+    </div>
   );
 }
 
