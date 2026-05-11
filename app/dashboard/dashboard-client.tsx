@@ -55,6 +55,38 @@ type AgentPrompt = {
   created_by?: string;
 };
 
+type AttachmentRecord = {
+  id: string;
+  filename: string;
+  file_type: string;
+  file_size_bytes?: number | null;
+  extracted_pages?: number | null;
+  chunks_count?: number | null;
+  created_at?: string;
+};
+
+type AttachmentChunk = {
+  id: string;
+  chunk_index: number;
+  content: string;
+  page_number?: number | null;
+  char_start?: number | null;
+  char_end?: number | null;
+  score?: number;
+  created_at?: string;
+};
+
+type AttachmentIngestPayload = {
+  attachment: AttachmentRecord;
+  chunks_created: number;
+};
+
+type AttachmentSearchPayload = {
+  attachment: AttachmentRecord;
+  chunks: AttachmentChunk[];
+  query: string;
+};
+
 type ApiState<T> = {
   data?: T;
   error?: string;
@@ -103,12 +135,16 @@ export default function DashboardClient() {
     JSON.stringify({ crea_uf: "SP", especialidades: ["estruturas"], hora_tecnica_brl: 250 }, null, 2)
   );
   const [attachmentText, setAttachmentText] = useState("Memorial técnico: carga de vento na cobertura exige validação por norma aplicável.");
+  const [attachmentQuery, setAttachmentQuery] = useState("carga vento cobertura");
+  const [selectedAttachmentId, setSelectedAttachmentId] = useState("");
   const [conversations, setConversations] = useState<ApiState<{ conversations: Conversation[] }>>(emptyState);
   const [conversationDetail, setConversationDetail] = useState<ApiState<{ conversation: ConversationDetail }>>(emptyState);
   const [conversationMutation, setConversationMutation] = useState<ApiState<unknown>>(emptyState);
   const [chat, setChat] = useState<ApiState<ChatResponse>>(emptyState);
   const [profile, setProfile] = useState<ApiState<unknown>>(emptyState);
-  const [attachment, setAttachment] = useState<ApiState<unknown>>(emptyState);
+  const [attachment, setAttachment] = useState<ApiState<AttachmentIngestPayload>>(emptyState);
+  const [attachments, setAttachments] = useState<ApiState<{ attachments: AttachmentRecord[] }>>(emptyState);
+  const [attachmentSearch, setAttachmentSearch] = useState<ApiState<AttachmentSearchPayload>>(emptyState);
   const [metricsDays, setMetricsDays] = useState(7);
   const [metrics, setMetrics] = useState<ApiState<DashboardMetricsPayload>>(emptyState);
   const [feedbackNotes, setFeedbackNotes] = useState("");
@@ -229,6 +265,43 @@ export default function DashboardClient() {
     }
   }
 
+  async function loadAttachments(preferredAttachmentId = selectedAttachmentId) {
+    if (!conversationId) {
+      setAttachments({ loading: false, error: "Selecione uma conversa antes de listar anexos." });
+      return;
+    }
+
+    setAttachments({ loading: true });
+    try {
+      const payload = await parseApiResponse<{ attachments: AttachmentRecord[] }>(
+        await fetch(`/api/conversations/${conversationId}/attachments`, { headers: authHeaders(token) })
+      );
+      setAttachments({ loading: false, data: payload });
+      const preferredAttachment = payload.attachments.find((item) => item.id === preferredAttachmentId);
+      if (preferredAttachment) setSelectedAttachmentId(preferredAttachment.id);
+      else if (payload.attachments[0]) setSelectedAttachmentId(payload.attachments[0].id);
+    } catch (error) {
+      setAttachments({ loading: false, error: error instanceof Error ? error.message : "Erro desconhecido" });
+    }
+  }
+
+  async function searchAttachmentChunks() {
+    if (!selectedAttachmentId) {
+      setAttachmentSearch({ loading: false, error: "Selecione ou ingira um anexo antes de buscar chunks." });
+      return;
+    }
+
+    setAttachmentSearch({ loading: true });
+    try {
+      const payload = await parseApiResponse<AttachmentSearchPayload>(
+        await fetch(`/api/attachments/${selectedAttachmentId}/chunks?q=${encodeURIComponent(attachmentQuery)}&limit=6`, { headers: authHeaders(token) })
+      );
+      setAttachmentSearch({ loading: false, data: payload });
+    } catch (error) {
+      setAttachmentSearch({ loading: false, error: error instanceof Error ? error.message : "Erro desconhecido" });
+    }
+  }
+
   async function ingestAttachment() {
     if (!conversationId) {
       setAttachment({ loading: false, error: "Crie ou selecione uma conversa antes de anexar contexto." });
@@ -237,7 +310,7 @@ export default function DashboardClient() {
 
     setAttachment({ loading: true });
     try {
-      const payload = await parseApiResponse<unknown>(
+      const payload = await parseApiResponse<AttachmentIngestPayload>(
         await fetch(`/api/conversations/${conversationId}/attachments`, {
           method: "POST",
           headers: authHeaders(token),
@@ -245,6 +318,8 @@ export default function DashboardClient() {
         })
       );
       setAttachment({ loading: false, data: payload });
+      setSelectedAttachmentId(payload.attachment.id);
+      void loadAttachments(payload.attachment.id);
     } catch (error) {
       setAttachment({ loading: false, error: error instanceof Error ? error.message : "Erro desconhecido" });
     }
@@ -469,18 +544,21 @@ export default function DashboardClient() {
             <ResultPanel title="Perfil" state={profile} compact />
           </section>
 
-          <section className="rounded-3xl border border-white/10 bg-white/5 p-6">
-            <h2 className="text-xl font-semibold text-white">Anexo textual</h2>
-            <textarea
-              className="mt-4 h-28 w-full rounded-2xl border border-slate-700 bg-slate-900 p-3 text-sm"
-              value={attachmentText}
-              onChange={(event) => setAttachmentText(event.target.value)}
-            />
-            <button className="mt-3 rounded-xl bg-white px-4 py-2 text-sm font-semibold text-slate-950" type="button" onClick={ingestAttachment} disabled={!token || attachment.loading}>
-              Ingerir anexo
-            </button>
-            <ResultPanel title="Anexo" state={attachment} compact />
-          </section>
+          <AttachmentRagPanel
+            attachmentQuery={attachmentQuery}
+            attachmentState={attachment}
+            attachmentsState={attachments}
+            attachmentText={attachmentText}
+            disabled={!token}
+            onAttachmentQueryChange={setAttachmentQuery}
+            onAttachmentTextChange={setAttachmentText}
+            onIngest={ingestAttachment}
+            onList={loadAttachments}
+            onSearch={searchAttachmentChunks}
+            onSelectAttachment={setSelectedAttachmentId}
+            searchState={attachmentSearch}
+            selectedAttachmentId={selectedAttachmentId}
+          />
 
           <PromptAdminPanel
             active={promptActive}
@@ -602,6 +680,100 @@ function ConversationHistoryPanel({
 
       <ResultPanel title="Status da conversa" state={mutationState} compact />
       <ResultPanel title="Payload da conversa" state={state} compact />
+    </section>
+  );
+}
+
+
+function AttachmentRagPanel({
+  attachmentQuery,
+  attachmentState,
+  attachmentsState,
+  attachmentText,
+  disabled,
+  onAttachmentQueryChange,
+  onAttachmentTextChange,
+  onIngest,
+  onList,
+  onSearch,
+  onSelectAttachment,
+  searchState,
+  selectedAttachmentId
+}: {
+  attachmentQuery: string;
+  attachmentState: ApiState<AttachmentIngestPayload>;
+  attachmentsState: ApiState<{ attachments: AttachmentRecord[] }>;
+  attachmentText: string;
+  disabled: boolean;
+  onAttachmentQueryChange: (query: string) => void;
+  onAttachmentTextChange: (text: string) => void;
+  onIngest: () => void;
+  onList: () => void;
+  onSearch: () => void;
+  onSelectAttachment: (attachmentId: string) => void;
+  searchState: ApiState<AttachmentSearchPayload>;
+  selectedAttachmentId: string;
+}) {
+  const attachmentOptions = attachmentsState.data?.attachments || [];
+  const chunks = searchState.data?.chunks || [];
+
+  return (
+    <section className="rounded-3xl border border-white/10 bg-white/5 p-6">
+      <h2 className="text-xl font-semibold text-white">Anexos RAG</h2>
+      <p className="mt-2 text-sm leading-6 text-slate-300">Ingira contexto textual, liste anexos da conversa e valide os chunks recuperados antes de chamar o agente.</p>
+      <textarea
+        className="mt-4 h-28 w-full rounded-2xl border border-slate-700 bg-slate-900 p-3 text-sm"
+        value={attachmentText}
+        onChange={(event) => onAttachmentTextChange(event.target.value)}
+      />
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-slate-950" type="button" onClick={onIngest} disabled={disabled || attachmentState.loading}>
+          Ingerir anexo
+        </button>
+        <button className="rounded-xl border border-slate-600 px-4 py-2 text-sm font-semibold" type="button" onClick={onList} disabled={disabled || attachmentsState.loading}>
+          Listar anexos
+        </button>
+      </div>
+
+      <label className="mt-4 block">
+        <span className="mb-2 block text-sm font-medium text-slate-300">Anexo para busca</span>
+        <select
+          className="w-full rounded-xl border border-slate-700 bg-slate-900 p-3 text-sm"
+          value={selectedAttachmentId}
+          onChange={(event) => onSelectAttachment(event.target.value)}
+        >
+          <option value="">Selecione um anexo</option>
+          {attachmentOptions.map((attachment) => (
+            <option key={attachment.id} value={attachment.id}>{attachment.filename} · {attachment.chunks_count || 0} chunks</option>
+          ))}
+        </select>
+      </label>
+      <label className="mt-3 block">
+        <span className="mb-2 block text-sm font-medium text-slate-300">Consulta RAG</span>
+        <input
+          className="w-full rounded-xl border border-slate-700 bg-slate-900 p-3 text-sm"
+          value={attachmentQuery}
+          onChange={(event) => onAttachmentQueryChange(event.target.value)}
+        />
+      </label>
+      <button className="mt-3 rounded-xl bg-cyan-300 px-4 py-2 text-sm font-semibold text-slate-950" type="button" onClick={onSearch} disabled={disabled || !selectedAttachmentId || searchState.loading}>
+        Buscar chunks
+      </button>
+
+      {chunks.length > 0 && (
+        <div className="mt-4 space-y-2">
+          {chunks.map((chunk) => (
+            <article key={chunk.id} className="rounded-2xl border border-slate-700 bg-slate-950/70 p-3">
+              <p className="text-[10px] uppercase tracking-wide text-slate-400">chunk {chunk.chunk_index}{chunk.page_number ? ` · pág. ${chunk.page_number}` : ""}{typeof chunk.score === "number" ? ` · score ${chunk.score}` : ""}</p>
+              <p className="mt-2 whitespace-pre-wrap text-xs leading-5 text-slate-200">{chunk.content}</p>
+            </article>
+          ))}
+        </div>
+      )}
+
+      <ResultPanel title="Anexo" state={attachmentState} compact />
+      <ResultPanel title="Lista de anexos" state={attachmentsState} compact />
+      <ResultPanel title="Busca em chunks" state={searchState} compact />
     </section>
   );
 }
