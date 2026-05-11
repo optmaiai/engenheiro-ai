@@ -134,7 +134,10 @@ export default function DashboardClient() {
   const [profileJson, setProfileJson] = useState(
     JSON.stringify({ crea_uf: "SP", especialidades: ["estruturas"], hora_tecnica_brl: 250 }, null, 2)
   );
+  const [attachmentFilename, setAttachmentFilename] = useState("contexto-demo.txt");
   const [attachmentText, setAttachmentText] = useState("Memorial técnico: carga de vento na cobertura exige validação por norma aplicável.");
+  const [attachmentChunkSize, setAttachmentChunkSize] = useState(1200);
+  const [attachmentOverlap, setAttachmentOverlap] = useState(180);
   const [attachmentQuery, setAttachmentQuery] = useState("carga vento cobertura");
   const [selectedAttachmentId, setSelectedAttachmentId] = useState("");
   const [conversations, setConversations] = useState<ApiState<{ conversations: Conversation[] }>>(emptyState);
@@ -338,7 +341,13 @@ export default function DashboardClient() {
         await fetch(`/api/conversations/${conversationId}/attachments`, {
           method: "POST",
           headers: authHeaders(token),
-          body: JSON.stringify({ filename: "contexto-demo.txt", file_type: "txt", content: attachmentText })
+          body: JSON.stringify({
+            filename: attachmentFilename,
+            file_type: "txt",
+            content: attachmentText,
+            chunk_size: attachmentChunkSize,
+            overlap: attachmentOverlap
+          })
         })
       );
       setAttachment({ loading: false, data: payload });
@@ -569,12 +578,18 @@ export default function DashboardClient() {
           </section>
 
           <AttachmentRagPanel
+            attachmentChunkSize={attachmentChunkSize}
+            attachmentFilename={attachmentFilename}
+            attachmentOverlap={attachmentOverlap}
             attachmentQuery={attachmentQuery}
             attachmentState={attachment}
             attachmentsState={attachments}
             attachmentText={attachmentText}
             disabled={!token}
             mutationState={attachmentMutation}
+            onAttachmentChunkSizeChange={setAttachmentChunkSize}
+            onAttachmentFilenameChange={setAttachmentFilename}
+            onAttachmentOverlapChange={setAttachmentOverlap}
             onAttachmentQueryChange={setAttachmentQuery}
             onAttachmentTextChange={setAttachmentText}
             onDelete={deleteSelectedAttachment}
@@ -712,12 +727,18 @@ function ConversationHistoryPanel({
 
 
 function AttachmentRagPanel({
+  attachmentChunkSize,
+  attachmentFilename,
+  attachmentOverlap,
   attachmentQuery,
   attachmentState,
   attachmentsState,
   attachmentText,
   disabled,
   mutationState,
+  onAttachmentChunkSizeChange,
+  onAttachmentFilenameChange,
+  onAttachmentOverlapChange,
   onAttachmentQueryChange,
   onAttachmentTextChange,
   onDelete,
@@ -728,12 +749,18 @@ function AttachmentRagPanel({
   searchState,
   selectedAttachmentId
 }: {
+  attachmentChunkSize: number;
+  attachmentFilename: string;
+  attachmentOverlap: number;
   attachmentQuery: string;
   attachmentState: ApiState<AttachmentIngestPayload>;
   attachmentsState: ApiState<{ attachments: AttachmentRecord[] }>;
   attachmentText: string;
   disabled: boolean;
   mutationState: ApiState<unknown>;
+  onAttachmentChunkSizeChange: (chunkSize: number) => void;
+  onAttachmentFilenameChange: (filename: string) => void;
+  onAttachmentOverlapChange: (overlap: number) => void;
   onAttachmentQueryChange: (query: string) => void;
   onAttachmentTextChange: (text: string) => void;
   onDelete: () => void;
@@ -746,18 +773,52 @@ function AttachmentRagPanel({
 }) {
   const attachmentOptions = attachmentsState.data?.attachments || [];
   const chunks = searchState.data?.chunks || [];
+  const invalidChunking = attachmentOverlap >= attachmentChunkSize;
 
   return (
     <section className="rounded-3xl border border-white/10 bg-white/5 p-6">
       <h2 className="text-xl font-semibold text-white">Anexos RAG</h2>
       <p className="mt-2 text-sm leading-6 text-slate-300">Ingira contexto textual, liste anexos da conversa e valide os chunks recuperados antes de chamar o agente.</p>
+      <label className="mt-4 block">
+        <span className="mb-2 block text-sm font-medium text-slate-300">Nome do arquivo</span>
+        <input
+          className="w-full rounded-xl border border-slate-700 bg-slate-900 p-3 text-sm"
+          value={attachmentFilename}
+          onChange={(event) => onAttachmentFilenameChange(event.target.value)}
+        />
+      </label>
       <textarea
         className="mt-4 h-28 w-full rounded-2xl border border-slate-700 bg-slate-900 p-3 text-sm"
         value={attachmentText}
         onChange={(event) => onAttachmentTextChange(event.target.value)}
       />
+      <div className="mt-3 grid gap-3 md:grid-cols-2">
+        <label>
+          <span className="mb-2 block text-sm font-medium text-slate-300">Tamanho do chunk</span>
+          <input
+            className="w-full rounded-xl border border-slate-700 bg-slate-900 p-3 text-sm"
+            max={4000}
+            min={500}
+            type="number"
+            value={attachmentChunkSize}
+            onChange={(event) => onAttachmentChunkSizeChange(Number(event.target.value || 1200))}
+          />
+        </label>
+        <label>
+          <span className="mb-2 block text-sm font-medium text-slate-300">Overlap</span>
+          <input
+            className="w-full rounded-xl border border-slate-700 bg-slate-900 p-3 text-sm"
+            max={1000}
+            min={0}
+            type="number"
+            value={attachmentOverlap}
+            onChange={(event) => onAttachmentOverlapChange(Number(event.target.value || 0))}
+          />
+        </label>
+      </div>
+      {invalidChunking && <p className="mt-2 text-xs text-red-300">Overlap precisa ser menor que o tamanho do chunk.</p>}
       <div className="mt-3 flex flex-wrap gap-2">
-        <button className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-slate-950" type="button" onClick={onIngest} disabled={disabled || attachmentState.loading}>
+        <button className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-slate-950" type="button" onClick={onIngest} disabled={disabled || attachmentState.loading || invalidChunking}>
           Ingerir anexo
         </button>
         <button className="rounded-xl border border-slate-600 px-4 py-2 text-sm font-semibold" type="button" onClick={onList} disabled={disabled || attachmentsState.loading}>

@@ -143,7 +143,7 @@ curl -X PUT http://localhost:3000/api/profile \
 curl -X POST http://localhost:3000/api/conversations/UUID/attachments \
   -H "Authorization: Bearer YOUR_JWT_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"filename":"memorial.txt","file_type":"txt","content":"Texto extraído do memorial de cálculo..."}'
+  -d '{"filename":"memorial.txt","file_type":"txt","content":"Texto extraído do memorial de cálculo...","chunk_size":1200,"overlap":180}'
 
 curl -X GET "http://localhost:3000/api/attachments/ATTACHMENT_UUID/chunks?q=carga%20vento&limit=5" \
   -H "Authorization: Bearer YOUR_JWT_TOKEN"
