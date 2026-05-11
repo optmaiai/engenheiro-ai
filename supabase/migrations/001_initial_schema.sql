@@ -6,7 +6,8 @@
 -- Enable extensions
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "vector";
-CREATE EXTENSION IF NOT EXISTS "pg_cron";
+-- pg_cron is optional and may not be enabled on every Supabase project.
+-- CREATE EXTENSION IF NOT EXISTS "pg_cron";
 
 -- ========================================================================
 -- TABLE 1: Conversations (owns everything)
@@ -39,6 +40,7 @@ CREATE TABLE public.ai_messages (
   conversation_id UUID NOT NULL REFERENCES public.conversations(id) ON DELETE CASCADE,
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   agent_id VARCHAR(50) NOT NULL,
+  model VARCHAR(100),
   role VARCHAR(20) NOT NULL CHECK (role IN ('user', 'assistant')),
   content TEXT NOT NULL,
   structured_output JSONB,
@@ -409,8 +411,9 @@ $$ LANGUAGE plpgsql;
 -- GRANTS (for service role)
 -- ========================================================================
 
-GRANT SELECT ON public.ai_metrics TO authenticated;
-GRANT SELECT ON public.security_events TO authenticated;
+-- Metrics and security events should remain service-role/admin mediated by API routes.
+-- GRANT SELECT ON public.ai_metrics TO authenticated;
+-- GRANT SELECT ON public.security_events TO authenticated;
 GRANT SELECT ON public.vw_agent_feedback_summary TO authenticated;
 GRANT SELECT ON public.vw_daily_ai_costs TO authenticated;
 
@@ -434,5 +437,4 @@ INSERT INTO public.agent_prompts (agent_id, version, title, content, is_active) 
 -- REFRESH VIEWS
 -- ========================================================================
 
-REFRESH MATERIALIZED VIEW CONCURRENTLY IF EXISTS public.vw_agent_feedback_summary;
-REFRESH MATERIALIZED VIEW CONCURRENTLY IF EXISTS public.vw_daily_ai_costs;
+-- Views above are regular views, not materialized views; no refresh is required.
