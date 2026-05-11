@@ -145,6 +145,7 @@ export default function DashboardClient() {
   const [attachment, setAttachment] = useState<ApiState<AttachmentIngestPayload>>(emptyState);
   const [attachments, setAttachments] = useState<ApiState<{ attachments: AttachmentRecord[] }>>(emptyState);
   const [attachmentSearch, setAttachmentSearch] = useState<ApiState<AttachmentSearchPayload>>(emptyState);
+  const [attachmentMutation, setAttachmentMutation] = useState<ApiState<unknown>>(emptyState);
   const [metricsDays, setMetricsDays] = useState(7);
   const [metrics, setMetrics] = useState<ApiState<DashboardMetricsPayload>>(emptyState);
   const [feedbackNotes, setFeedbackNotes] = useState("");
@@ -282,6 +283,29 @@ export default function DashboardClient() {
       else if (payload.attachments[0]) setSelectedAttachmentId(payload.attachments[0].id);
     } catch (error) {
       setAttachments({ loading: false, error: error instanceof Error ? error.message : "Erro desconhecido" });
+    }
+  }
+
+  async function deleteSelectedAttachment() {
+    if (!selectedAttachmentId) {
+      setAttachmentMutation({ loading: false, error: "Selecione um anexo antes de excluir." });
+      return;
+    }
+
+    setAttachmentMutation({ loading: true });
+    try {
+      const payload = await parseApiResponse<unknown>(
+        await fetch(`/api/attachments/${selectedAttachmentId}`, {
+          method: "DELETE",
+          headers: authHeaders(token)
+        })
+      );
+      setAttachmentMutation({ loading: false, data: payload });
+      setSelectedAttachmentId("");
+      setAttachmentSearch(emptyState);
+      void loadAttachments("");
+    } catch (error) {
+      setAttachmentMutation({ loading: false, error: error instanceof Error ? error.message : "Erro desconhecido" });
     }
   }
 
@@ -550,8 +574,10 @@ export default function DashboardClient() {
             attachmentsState={attachments}
             attachmentText={attachmentText}
             disabled={!token}
+            mutationState={attachmentMutation}
             onAttachmentQueryChange={setAttachmentQuery}
             onAttachmentTextChange={setAttachmentText}
+            onDelete={deleteSelectedAttachment}
             onIngest={ingestAttachment}
             onList={loadAttachments}
             onSearch={searchAttachmentChunks}
@@ -691,8 +717,10 @@ function AttachmentRagPanel({
   attachmentsState,
   attachmentText,
   disabled,
+  mutationState,
   onAttachmentQueryChange,
   onAttachmentTextChange,
+  onDelete,
   onIngest,
   onList,
   onSearch,
@@ -705,8 +733,10 @@ function AttachmentRagPanel({
   attachmentsState: ApiState<{ attachments: AttachmentRecord[] }>;
   attachmentText: string;
   disabled: boolean;
+  mutationState: ApiState<unknown>;
   onAttachmentQueryChange: (query: string) => void;
   onAttachmentTextChange: (text: string) => void;
+  onDelete: () => void;
   onIngest: () => void;
   onList: () => void;
   onSearch: () => void;
@@ -732,6 +762,9 @@ function AttachmentRagPanel({
         </button>
         <button className="rounded-xl border border-slate-600 px-4 py-2 text-sm font-semibold" type="button" onClick={onList} disabled={disabled || attachmentsState.loading}>
           Listar anexos
+        </button>
+        <button className="rounded-xl border border-red-400/50 px-4 py-2 text-sm font-semibold text-red-200" type="button" onClick={onDelete} disabled={disabled || !selectedAttachmentId || mutationState.loading}>
+          Excluir selecionado
         </button>
       </div>
 
@@ -774,6 +807,7 @@ function AttachmentRagPanel({
       <ResultPanel title="Anexo" state={attachmentState} compact />
       <ResultPanel title="Lista de anexos" state={attachmentsState} compact />
       <ResultPanel title="Busca em chunks" state={searchState} compact />
+      <ResultPanel title="Status do anexo" state={mutationState} compact />
     </section>
   );
 }

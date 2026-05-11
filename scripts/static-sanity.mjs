@@ -11,6 +11,7 @@ const requiredFiles = [
   "app/api/admin/prompts/[promptId]/route.ts",
   "app/api/conversations/[conversationId]/attachments/route.ts",
   "app/api/attachments/[attachmentId]/chunks/route.ts",
+  "app/api/attachments/[attachmentId]/route.ts",
   "src/server/ai-chat.functions.ts",
   "src/server/ai-output-guards.ts",
   "src/server/ai-security.ts",
@@ -75,6 +76,13 @@ const attachmentRoute = readFileSync("app/api/conversations/[conversationId]/att
 for (const expected of ["ingestAttachmentSchema", "chunkText", "attachment_chunks", "ensureConversationOwner"]) {
   if (!attachmentRoute.includes(expected)) {
     throw new Error(`Attachment route não contém comportamento esperado: ${expected}`);
+  }
+}
+
+const attachmentDetailRoute = readFileSync("app/api/attachments/[attachmentId]/route.ts", "utf8");
+for (const expected of ["DELETE", "ensureAttachmentOwner", "Anexo não encontrado"]) {
+  if (!attachmentDetailRoute.includes(expected)) {
+    throw new Error(`Attachment detail route não contém comportamento esperado: ${expected}`);
   }
 }
 

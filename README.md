@@ -147,6 +147,9 @@ curl -X POST http://localhost:3000/api/conversations/UUID/attachments \
 
 curl -X GET "http://localhost:3000/api/attachments/ATTACHMENT_UUID/chunks?q=carga%20vento&limit=5" \
   -H "Authorization: Bearer YOUR_JWT_TOKEN"
+
+curl -X DELETE http://localhost:3000/api/attachments/ATTACHMENT_UUID \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
 ```
 
 ### Prompts administrativos
