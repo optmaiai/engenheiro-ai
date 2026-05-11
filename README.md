@@ -101,6 +101,10 @@ supabase functions deploy chat-stream
 vercel deploy
 ```
 
+## Interface operacional
+
+Além da landing page, o MVP inclui `/dashboard` para testar chat, conversas, perfil técnico e ingestão de anexos usando um JWT Supabase do usuário.
+
 ## API
 
 ### Criar conversa
