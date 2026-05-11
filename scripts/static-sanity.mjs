@@ -7,6 +7,8 @@ const requiredFiles = [
   "app/api/feedback/route.ts",
   "app/api/metrics/route.ts",
   "app/api/profile/route.ts",
+  "app/api/admin/prompts/route.ts",
+  "app/api/admin/prompts/[promptId]/route.ts",
   "src/server/ai-chat.functions.ts",
   "src/server/ai-output-guards.ts",
   "src/server/ai-security.ts",
@@ -49,6 +51,20 @@ for (const expected of [
 ]) {
   if (!chat.includes(expected)) {
     throw new Error(`Chat backend não contém hardening esperado: ${expected}`);
+  }
+}
+
+const adminPromptsRoute = readFileSync("app/api/admin/prompts/route.ts", "utf8");
+for (const expected of ["createAgentPromptSchema", "isAdminEmail", "agent_prompts", "version"]) {
+  if (!adminPromptsRoute.includes(expected)) {
+    throw new Error(`Admin prompts route não contém comportamento esperado: ${expected}`);
+  }
+}
+
+const adminPromptDetailRoute = readFileSync("app/api/admin/prompts/[promptId]/route.ts", "utf8");
+for (const expected of ["updateAgentPromptSchema", "isAdminEmail", "promptId inválido"]) {
+  if (!adminPromptDetailRoute.includes(expected)) {
+    throw new Error(`Admin prompt detail route não contém comportamento esperado: ${expected}`);
   }
 }
 

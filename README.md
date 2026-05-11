@@ -6,12 +6,12 @@ Sistema inteligente de orquestração de agentes IA especializado para engenheir
 
 ## O que está implementado
 
-- Next.js 14 com landing page responsiva e catálogo dos 6 agentes.
+- Next.js 16 com landing page responsiva e catálogo dos 6 agentes.
 - API `POST /api/chat` com autenticação Supabase JWT, rate limit opcional Upstash, camadas de prompt, Lovable AI Gateway, guardrails, persistência e métricas.
 - API `GET/POST /api/conversations` para histórico básico e `GET/PATCH/DELETE /api/conversations/:id` para detalhe, edição e arquivamento lógico.
 - API `GET/PUT /api/profile` para memória técnica do engenheiro.
 - API `POST /api/feedback` para loop de avaliação.
-- API `GET /api/metrics` para dashboards administrativos com allowlist `ADMIN_EMAILS`.
+- API `GET /api/metrics` e `GET/POST/PATCH /api/admin/prompts` para administração com allowlist `ADMIN_EMAILS`.
 - Supabase migration com conversas, mensagens, feedback, prompts versionados, perfis, anexos/RAG, métricas, eventos de segurança, views `security_invoker` e notificações.
 - Edge Function `chat-stream` como base SSE para deploy no Supabase.
 
@@ -121,6 +121,23 @@ curl -X PUT http://localhost:3000/api/profile \
   -d '{"crea_uf":"SP","especialidades":["estruturas"],"hora_tecnica_brl":250}'
 ```
 
+### Prompts administrativos
+
+```bash
+curl -X GET "http://localhost:3000/api/admin/prompts?agent_id=orcamento" \
+  -H "Authorization: Bearer ADMIN_JWT_TOKEN"
+
+curl -X POST http://localhost:3000/api/admin/prompts \
+  -H "Authorization: Bearer ADMIN_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"agent_id":"orcamento","title":"Orçamento Técnico v2","content":"Prompt completo com mais de cinquenta caracteres...","is_active":true}'
+
+curl -X PATCH http://localhost:3000/api/admin/prompts/PROMPT_UUID \
+  -H "Authorization: Bearer ADMIN_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"is_active":true,"notes":"Ativado após revisão"}'
+```
+
 ### Enviar mensagem
 
 ```bash
@@ -134,5 +151,5 @@ curl -X POST http://localhost:3000/api/chat \
 
 - Mensagens, detalhes de conversa, perfil e feedback agora verificam propriedade da conversa/mensagem/usuário no backend antes de operações via service role.
 - Roteamento emitido pelo modelo é validado e normalizado antes de persistir ou gerar métricas.
-- Métricas brutas permanecem service-role only; admins acessam agregados pela API.
+- Métricas brutas permanecem service-role only; admins acessam agregados e versionamento de prompts pela API protegida por `ADMIN_EMAILS`.
 - A RPC `get_conversation_with_history` respeita `auth.uid()` e limita o histórico retornado.

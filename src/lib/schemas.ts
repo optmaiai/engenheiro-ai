@@ -47,6 +47,26 @@ export const engineerProfileSchema = z.object({
 
 export const upsertEngineerProfileSchema = engineerProfileSchema.partial();
 
+
+export const createAgentPromptSchema = z.object({
+  agent_id: agentIdSchema,
+  title: z.string().min(1).max(160),
+  content: z.string().min(50).max(50000),
+  notes: z.string().max(4000).optional().nullable(),
+  is_active: z.boolean().default(false),
+  model_override: z.string().min(1).max(100).optional().nullable()
+});
+
+export const updateAgentPromptSchema = z.object({
+  title: z.string().min(1).max(160).optional(),
+  content: z.string().min(50).max(50000).optional(),
+  notes: z.string().max(4000).optional().nullable(),
+  is_active: z.boolean().optional(),
+  model_override: z.string().min(1).max(100).optional().nullable()
+}).refine((value) => Object.keys(value).length > 0, {
+  message: "Informe pelo menos um campo para atualizar"
+});
+
 export const feedbackRequestSchema = z.object({
   message_id: z.string().uuid(),
   conversation_id: z.string().uuid(),
