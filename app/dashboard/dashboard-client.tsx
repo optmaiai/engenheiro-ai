@@ -20,6 +20,20 @@ type ChatResponse = {
   guardrails_triggered?: unknown[];
 };
 
+type AgentPrompt = {
+  id: string;
+  agent_id: AgentId;
+  version: number;
+  title: string;
+  content: string;
+  notes?: string | null;
+  is_active: boolean;
+  model_override?: string | null;
+  created_at?: string;
+  updated_at?: string;
+  created_by?: string;
+};
+
 type ApiState<T> = {
   data?: T;
   error?: string;
@@ -39,6 +53,8 @@ type DashboardMetricsPayload = {
 };
 
 const emptyState = { loading: false };
+const defaultPromptContent =
+  "Você é um agente especialista da Engenheiro.AI. Responda com precisão técnica, explicite premissas, cite cautelas quando necessário e entregue próximos passos acionáveis para engenheiros PJ.";
 
 function authHeaders(token: string) {
   return {
@@ -74,6 +90,14 @@ export default function DashboardClient() {
   const [metrics, setMetrics] = useState<ApiState<DashboardMetricsPayload>>(emptyState);
   const [feedbackNotes, setFeedbackNotes] = useState("");
   const [feedback, setFeedback] = useState<ApiState<unknown>>(emptyState);
+  const [promptAgentId, setPromptAgentId] = useState<AgentId>("comunicacao");
+  const [promptTitle, setPromptTitle] = useState("Prompt operacional vNext");
+  const [promptContent, setPromptContent] = useState(defaultPromptContent);
+  const [promptNotes, setPromptNotes] = useState("Ajuste criado pelo console operacional.");
+  const [promptModelOverride, setPromptModelOverride] = useState("");
+  const [promptActive, setPromptActive] = useState(false);
+  const [prompts, setPrompts] = useState<ApiState<{ prompts: AgentPrompt[] }>>(emptyState);
+  const [promptMutation, setPromptMutation] = useState<ApiState<unknown>>(emptyState);
 
   const selectedAgent = useMemo(() => AGENTS[agentId], [agentId]);
 
@@ -166,6 +190,59 @@ export default function DashboardClient() {
       setMetrics({ loading: false, data: payload });
     } catch (error) {
       setMetrics({ loading: false, error: error instanceof Error ? error.message : "Erro desconhecido" });
+    }
+  }
+
+  async function loadPrompts() {
+    setPrompts({ loading: true });
+    try {
+      const payload = await parseApiResponse<{ prompts: AgentPrompt[] }>(
+        await fetch(`/api/admin/prompts?agent_id=${encodeURIComponent(promptAgentId)}`, { headers: authHeaders(token) })
+      );
+      setPrompts({ loading: false, data: payload });
+    } catch (error) {
+      setPrompts({ loading: false, error: error instanceof Error ? error.message : "Erro desconhecido" });
+    }
+  }
+
+  async function createPromptVersion() {
+    setPromptMutation({ loading: true });
+    try {
+      const payload = await parseApiResponse<unknown>(
+        await fetch("/api/admin/prompts", {
+          method: "POST",
+          headers: authHeaders(token),
+          body: JSON.stringify({
+            agent_id: promptAgentId,
+            title: promptTitle,
+            content: promptContent,
+            notes: promptNotes || undefined,
+            is_active: promptActive,
+            model_override: promptModelOverride || undefined
+          })
+        })
+      );
+      setPromptMutation({ loading: false, data: payload });
+      void loadPrompts();
+    } catch (error) {
+      setPromptMutation({ loading: false, error: error instanceof Error ? error.message : "Erro desconhecido" });
+    }
+  }
+
+  async function activatePrompt(promptId: string) {
+    setPromptMutation({ loading: true });
+    try {
+      const payload = await parseApiResponse<unknown>(
+        await fetch(`/api/admin/prompts/${promptId}`, {
+          method: "PATCH",
+          headers: authHeaders(token),
+          body: JSON.stringify({ is_active: true })
+        })
+      );
+      setPromptMutation({ loading: false, data: payload });
+      void loadPrompts();
+    } catch (error) {
+      setPromptMutation({ loading: false, error: error instanceof Error ? error.message : "Erro desconhecido" });
     }
   }
 
@@ -325,6 +402,27 @@ export default function DashboardClient() {
             <ResultPanel title="Anexo" state={attachment} compact />
           </section>
 
+          <PromptAdminPanel
+            active={promptActive}
+            agentId={promptAgentId}
+            content={promptContent}
+            disabled={!token}
+            modelOverride={promptModelOverride}
+            mutationState={promptMutation}
+            notes={promptNotes}
+            onActiveChange={setPromptActive}
+            onAgentChange={setPromptAgentId}
+            onActivatePrompt={activatePrompt}
+            onContentChange={setPromptContent}
+            onCreatePrompt={createPromptVersion}
+            onLoadPrompts={loadPrompts}
+            onModelOverrideChange={setPromptModelOverride}
+            onNotesChange={setPromptNotes}
+            onTitleChange={setPromptTitle}
+            promptsState={prompts}
+            title={promptTitle}
+          />
+
           <section className="rounded-3xl border border-cyan-400/20 bg-cyan-400/10 p-6">
             <h2 className="text-xl font-semibold text-white">Métricas admin</h2>
             <p className="mt-2 text-sm leading-6 text-slate-300">Use um JWT permitido em <code>ADMIN_EMAILS</code> para consultar agregados operacionais.</p>
@@ -352,6 +450,140 @@ export default function DashboardClient() {
 }
 
 
+
+
+function PromptAdminPanel({
+  active,
+  agentId,
+  content,
+  disabled,
+  modelOverride,
+  mutationState,
+  notes,
+  onActiveChange,
+  onActivatePrompt,
+  onAgentChange,
+  onContentChange,
+  onCreatePrompt,
+  onLoadPrompts,
+  onModelOverrideChange,
+  onNotesChange,
+  onTitleChange,
+  promptsState,
+  title
+}: {
+  active: boolean;
+  agentId: AgentId;
+  content: string;
+  disabled: boolean;
+  modelOverride: string;
+  mutationState: ApiState<unknown>;
+  notes: string;
+  onActiveChange: (active: boolean) => void;
+  onActivatePrompt: (promptId: string) => void;
+  onAgentChange: (agentId: AgentId) => void;
+  onContentChange: (content: string) => void;
+  onCreatePrompt: () => void;
+  onLoadPrompts: () => void;
+  onModelOverrideChange: (model: string) => void;
+  onNotesChange: (notes: string) => void;
+  onTitleChange: (title: string) => void;
+  promptsState: ApiState<{ prompts: AgentPrompt[] }>;
+  title: string;
+}) {
+  const prompts = promptsState.data?.prompts || [];
+
+  return (
+    <section className="rounded-3xl border border-amber-300/20 bg-amber-300/10 p-6">
+      <h2 className="text-xl font-semibold text-white">Prompts admin</h2>
+      <p className="mt-2 text-sm leading-6 text-slate-300">Crie versões, audite histórico e ative o prompt operacional por agente usando um JWT admin.</p>
+      <label className="mt-4 block">
+        <span className="mb-2 block text-sm font-medium text-slate-300">Agente do prompt</span>
+        <select
+          className="w-full rounded-xl border border-slate-700 bg-slate-900 p-3 text-sm"
+          value={agentId}
+          onChange={(event) => onAgentChange(event.target.value as AgentId)}
+        >
+          {Object.values(AGENTS).map((agent) => (
+            <option key={agent.id} value={agent.id}>{agent.name}</option>
+          ))}
+        </select>
+      </label>
+      <label className="mt-3 block">
+        <span className="mb-2 block text-sm font-medium text-slate-300">Título</span>
+        <input
+          className="w-full rounded-xl border border-slate-700 bg-slate-900 p-3 text-sm"
+          value={title}
+          onChange={(event) => onTitleChange(event.target.value)}
+        />
+      </label>
+      <label className="mt-3 block">
+        <span className="mb-2 block text-sm font-medium text-slate-300">Prompt</span>
+        <textarea
+          className="h-40 w-full rounded-2xl border border-slate-700 bg-slate-900 p-3 font-mono text-xs"
+          value={content}
+          onChange={(event) => onContentChange(event.target.value)}
+        />
+      </label>
+      <div className="mt-3 grid gap-3 md:grid-cols-2">
+        <label>
+          <span className="mb-2 block text-sm font-medium text-slate-300">Modelo override opcional</span>
+          <input
+            className="w-full rounded-xl border border-slate-700 bg-slate-900 p-3 text-sm"
+            placeholder="ex.: openai/gpt-4.1"
+            value={modelOverride}
+            onChange={(event) => onModelOverrideChange(event.target.value)}
+          />
+        </label>
+        <label>
+          <span className="mb-2 block text-sm font-medium text-slate-300">Notas</span>
+          <input
+            className="w-full rounded-xl border border-slate-700 bg-slate-900 p-3 text-sm"
+            value={notes}
+            onChange={(event) => onNotesChange(event.target.value)}
+          />
+        </label>
+      </div>
+      <label className="mt-3 flex items-center gap-2 text-sm text-slate-300">
+        <input checked={active} type="checkbox" onChange={(event) => onActiveChange(event.target.checked)} />
+        Ativar esta versão após criar
+      </label>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <button className="rounded-xl bg-amber-300 px-4 py-2 text-sm font-semibold text-slate-950" disabled={disabled || mutationState.loading} type="button" onClick={onCreatePrompt}>
+          Criar versão
+        </button>
+        <button className="rounded-xl border border-slate-600 px-4 py-2 text-sm font-semibold" disabled={disabled || promptsState.loading} type="button" onClick={onLoadPrompts}>
+          Listar versões
+        </button>
+      </div>
+
+      <div className="mt-4 space-y-2">
+        {prompts.map((prompt) => (
+          <article key={prompt.id} className="rounded-2xl border border-slate-700 bg-slate-950/70 p-3">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <p className="text-sm font-semibold text-white">v{prompt.version} · {prompt.title}</p>
+                <p className="text-xs text-slate-400">{prompt.agent_id}{prompt.model_override ? ` · ${prompt.model_override}` : ""}</p>
+              </div>
+              <span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${prompt.is_active ? "bg-emerald-300 text-slate-950" : "bg-slate-800 text-slate-300"}`}>
+                {prompt.is_active ? "Ativo" : "Inativo"}
+              </span>
+            </div>
+            {prompt.notes && <p className="mt-2 text-xs text-slate-400">{prompt.notes}</p>}
+            <p className="mt-2 line-clamp-3 text-xs leading-5 text-slate-300">{prompt.content}</p>
+            {!prompt.is_active && (
+              <button className="mt-3 rounded-lg bg-white px-3 py-2 text-xs font-semibold text-slate-950" disabled={disabled || mutationState.loading} type="button" onClick={() => onActivatePrompt(prompt.id)}>
+                Ativar versão
+              </button>
+            )}
+          </article>
+        ))}
+      </div>
+      <ResultPanel title="Lista de prompts" state={promptsState} compact />
+      <ResultPanel title="Status do prompt" state={mutationState} compact />
+    </section>
+  );
+}
 
 function FeedbackPanel({
   disabled,
