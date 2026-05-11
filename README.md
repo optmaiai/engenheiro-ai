@@ -8,7 +8,8 @@ Sistema inteligente de orquestração de agentes IA especializado para engenheir
 
 - Next.js 14 com landing page responsiva e catálogo dos 6 agentes.
 - API `POST /api/chat` com autenticação Supabase JWT, rate limit opcional Upstash, camadas de prompt, Lovable AI Gateway, guardrails, persistência e métricas.
-- API `GET/POST /api/conversations` para histórico básico.
+- API `GET/POST /api/conversations` para histórico básico e `GET/PATCH/DELETE /api/conversations/:id` para detalhe, edição e arquivamento lógico.
+- API `GET/PUT /api/profile` para memória técnica do engenheiro.
 - API `POST /api/feedback` para loop de avaliação.
 - API `GET /api/metrics` para dashboards administrativos com allowlist `ADMIN_EMAILS`.
 - Supabase migration com conversas, mensagens, feedback, prompts versionados, perfis, anexos/RAG, métricas, eventos de segurança, views `security_invoker` e notificações.
@@ -99,6 +100,27 @@ curl -X POST http://localhost:3000/api/conversations \
   -d '{"agent_id":"orcamento","title":"Orçamento reforma"}'
 ```
 
+### Ler/editar conversa
+
+```bash
+curl -X GET "http://localhost:3000/api/conversations/UUID?limit=30" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+
+curl -X PATCH http://localhost:3000/api/conversations/UUID \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"title":"Novo título","status":"archived"}'
+```
+
+### Perfil técnico
+
+```bash
+curl -X PUT http://localhost:3000/api/profile \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"crea_uf":"SP","especialidades":["estruturas"],"hora_tecnica_brl":250}'
+```
+
 ### Enviar mensagem
 
 ```bash
@@ -110,7 +132,7 @@ curl -X POST http://localhost:3000/api/chat \
 
 ## Hardening recente
 
-- Mensagens e feedback agora verificam propriedade da conversa/mensagem no backend antes de inserir via service role.
+- Mensagens, detalhes de conversa, perfil e feedback agora verificam propriedade da conversa/mensagem/usuário no backend antes de operações via service role.
 - Roteamento emitido pelo modelo é validado e normalizado antes de persistir ou gerar métricas.
 - Métricas brutas permanecem service-role only; admins acessam agregados pela API.
 - A RPC `get_conversation_with_history` respeita `auth.uid()` e limita o histórico retornado.

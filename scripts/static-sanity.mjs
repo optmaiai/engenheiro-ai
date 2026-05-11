@@ -3,8 +3,10 @@ import { readFileSync, existsSync } from "node:fs";
 const requiredFiles = [
   "app/api/chat/route.ts",
   "app/api/conversations/route.ts",
+  "app/api/conversations/[conversationId]/route.ts",
   "app/api/feedback/route.ts",
   "app/api/metrics/route.ts",
+  "app/api/profile/route.ts",
   "src/server/ai-chat.functions.ts",
   "src/server/ai-output-guards.ts",
   "src/server/ai-security.ts",
@@ -47,6 +49,20 @@ for (const expected of [
 ]) {
   if (!chat.includes(expected)) {
     throw new Error(`Chat backend não contém hardening esperado: ${expected}`);
+  }
+}
+
+const profileRoute = readFileSync("app/api/profile/route.ts", "utf8");
+for (const expected of ["upsertEngineerProfileSchema", "user_engineer_profile", 'onConflict: "user_id"']) {
+  if (!profileRoute.includes(expected)) {
+    throw new Error(`Profile route não contém comportamento esperado: ${expected}`);
+  }
+}
+
+const conversationDetailRoute = readFileSync("app/api/conversations/[conversationId]/route.ts", "utf8");
+for (const expected of ["ai_messages", "conversationId inválido", 'status: "deleted"']) {
+  if (!conversationDetailRoute.includes(expected)) {
+    throw new Error(`Conversation detail route não contém comportamento esperado: ${expected}`);
   }
 }
 

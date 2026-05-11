@@ -29,6 +29,7 @@ CREATE POLICY "conversations_owner" ON public.conversations
   FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 CREATE INDEX idx_conversations_user_id ON public.conversations(user_id);
 CREATE INDEX idx_conversations_agent_id ON public.conversations(agent_id);
+CREATE INDEX idx_conversations_status ON public.conversations(status);
 CREATE INDEX idx_conversations_created_at ON public.conversations(created_at DESC);
 
 -- ========================================================================
@@ -103,6 +104,7 @@ CREATE POLICY "ai_feedback_owner" ON public.ai_feedback
     )
   );
 CREATE INDEX idx_ai_feedback_agent_id ON public.ai_feedback(agent_id);
+CREATE INDEX idx_ai_feedback_message_id ON public.ai_feedback(message_id);
 CREATE INDEX idx_ai_feedback_rating ON public.ai_feedback(rating);
 CREATE INDEX idx_ai_feedback_created_at ON public.ai_feedback(created_at DESC);
 

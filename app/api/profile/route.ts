@@ -1,6 +1,6 @@
-import { readJsonBody } from "@/server/http";
 import { NextResponse } from "next/server";
-import { createConversationSchema } from "@/lib/schemas";
+import { upsertEngineerProfileSchema } from "@/lib/schemas";
+import { readJsonBody } from "@/server/http";
 import { createServiceClient, getAuthenticatedUser } from "@/server/supabase";
 
 export async function GET(request: Request) {
@@ -9,18 +9,16 @@ export async function GET(request: Request) {
 
   const supabase = createServiceClient();
   const { data, error } = await supabase
-    .from("conversations")
-    .select("id,title,agent_id,status,created_at,updated_at,metadata")
+    .from("user_engineer_profile")
+    .select("*")
     .eq("user_id", user.id)
-    .neq("status", "deleted")
-    .order("updated_at", { ascending: false })
-    .limit(50);
+    .maybeSingle();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ conversations: data });
+  return NextResponse.json({ profile: data });
 }
 
-export async function POST(request: Request) {
+export async function PUT(request: Request) {
   const user = await getAuthenticatedUser(request.headers.get("authorization"));
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -31,18 +29,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "JSON inválido" }, { status: 400 });
   }
 
-  const parsed = createConversationSchema.safeParse(body);
+  const parsed = upsertEngineerProfileSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid request", details: parsed.error.flatten() }, { status: 400 });
   }
 
   const supabase = createServiceClient();
   const { data, error } = await supabase
-    .from("conversations")
-    .insert({ user_id: user.id, ...parsed.data })
-    .select("id")
+    .from("user_engineer_profile")
+    .upsert({ user_id: user.id, ...parsed.data, updated_at: new Date().toISOString() }, { onConflict: "user_id" })
+    .select("*")
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ conversation_id: data.id }, { status: 201 });
+  return NextResponse.json({ profile: data });
 }

@@ -9,7 +9,7 @@ export async function readJsonBody(request: Request): Promise<unknown> {
 export function getAllowedAdminEmails(): string[] {
   return (process.env.ADMIN_EMAILS || "adminmaster@engenheiro.ai")
     .split(",")
-    .map((email) => email.trim().toLowerCase())
+    .map((email: string) => email.trim().toLowerCase())
     .filter(Boolean);
 }
 
