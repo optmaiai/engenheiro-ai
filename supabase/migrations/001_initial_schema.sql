@@ -55,7 +55,18 @@ CREATE TABLE public.ai_messages (
 
 ALTER TABLE public.ai_messages ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "ai_messages_owner" ON public.ai_messages
-  FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+  FOR ALL USING (
+    auth.uid() = user_id AND EXISTS (
+      SELECT 1 FROM public.conversations c
+      WHERE c.id = ai_messages.conversation_id AND c.user_id = auth.uid()
+    )
+  )
+  WITH CHECK (
+    auth.uid() = user_id AND EXISTS (
+      SELECT 1 FROM public.conversations c
+      WHERE c.id = ai_messages.conversation_id AND c.user_id = auth.uid()
+    )
+  );
 CREATE INDEX idx_ai_messages_conversation_id ON public.ai_messages(conversation_id);
 CREATE INDEX idx_ai_messages_user_id ON public.ai_messages(user_id);
 CREATE INDEX idx_ai_messages_created_at ON public.ai_messages(created_at DESC);
@@ -79,7 +90,18 @@ CREATE TABLE public.ai_feedback (
 
 ALTER TABLE public.ai_feedback ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "ai_feedback_owner" ON public.ai_feedback
-  FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+  FOR ALL USING (
+    auth.uid() = user_id AND EXISTS (
+      SELECT 1 FROM public.ai_messages m
+      WHERE m.id = ai_feedback.message_id AND m.user_id = auth.uid()
+    )
+  )
+  WITH CHECK (
+    auth.uid() = user_id AND EXISTS (
+      SELECT 1 FROM public.ai_messages m
+      WHERE m.id = ai_feedback.message_id AND m.user_id = auth.uid()
+    )
+  );
 CREATE INDEX idx_ai_feedback_agent_id ON public.ai_feedback(agent_id);
 CREATE INDEX idx_ai_feedback_rating ON public.ai_feedback(rating);
 CREATE INDEX idx_ai_feedback_created_at ON public.ai_feedback(created_at DESC);
@@ -293,7 +315,8 @@ CREATE INDEX idx_security_events_event_type ON public.security_events(event_type
 -- VIEW 1: Agent Feedback Summary
 -- ========================================================================
 
-CREATE OR REPLACE VIEW public.vw_agent_feedback_summary AS
+CREATE OR REPLACE VIEW public.vw_agent_feedback_summary
+WITH (security_invoker = true) AS
 SELECT 
   agent_id,
   COUNT(*) as total_feedback,
@@ -311,7 +334,8 @@ ORDER BY feedback_date DESC, agent_id;
 -- VIEW 2: Daily AI Costs
 -- ========================================================================
 
-CREATE OR REPLACE VIEW public.vw_daily_ai_costs AS
+CREATE OR REPLACE VIEW public.vw_daily_ai_costs
+WITH (security_invoker = true) AS
 SELECT 
   DATE(created_at) as cost_date,
   agent_id,
@@ -386,26 +410,36 @@ RETURNS TABLE (
 ) AS $$
 BEGIN
   RETURN QUERY
-  SELECT 
+  SELECT
     c.id,
     c.title,
     c.agent_id,
-    JSONB_AGG(
-      JSONB_BUILD_OBJECT(
-        'id', m.id,
-        'role', m.role,
-        'content', m.content,
-        'structured_output', m.structured_output,
-        'created_at', m.created_at
-      )
-      ORDER BY m.created_at ASC
-    ) as messages
+    COALESCE(
+      JSONB_AGG(
+        JSONB_BUILD_OBJECT(
+          'id', limited_messages.id,
+          'role', limited_messages.role,
+          'content', limited_messages.content,
+          'structured_output', limited_messages.structured_output,
+          'routing_json', limited_messages.routing_json,
+          'created_at', limited_messages.created_at
+        )
+        ORDER BY limited_messages.created_at ASC
+      ) FILTER (WHERE limited_messages.id IS NOT NULL),
+      '[]'::JSONB
+    ) AS messages
   FROM public.conversations c
-  LEFT JOIN public.ai_messages m ON m.conversation_id = c.id
-  WHERE c.id = p_conversation_id
+  LEFT JOIN LATERAL (
+    SELECT m.id, m.role, m.content, m.structured_output, m.routing_json, m.created_at
+    FROM public.ai_messages m
+    WHERE m.conversation_id = c.id AND m.user_id = auth.uid()
+    ORDER BY m.created_at DESC
+    LIMIT LEAST(GREATEST(p_limit, 1), 100)
+  ) limited_messages ON TRUE
+  WHERE c.id = p_conversation_id AND c.user_id = auth.uid()
   GROUP BY c.id, c.title, c.agent_id;
 END;
-$$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql STABLE;
 
 -- ========================================================================
 -- GRANTS (for service role)
@@ -417,9 +451,9 @@ $$ LANGUAGE plpgsql;
 GRANT SELECT ON public.vw_agent_feedback_summary TO authenticated;
 GRANT SELECT ON public.vw_daily_ai_costs TO authenticated;
 
--- Admin grants (admin master only)
+-- Agent prompt writes are still constrained by the admin-only RLS policy above.
 GRANT ALL ON public.agent_prompts TO authenticated;
-GRANT ALL ON public.ai_metrics TO authenticated;
+-- ai_metrics remains service-role only; expose aggregates via authenticated admin API routes.
 
 -- ========================================================================
 -- INITIAL DATA (Default Agent Prompts)

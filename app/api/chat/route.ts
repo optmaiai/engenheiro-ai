@@ -1,3 +1,4 @@
+import { readJsonBody } from "@/server/http";
 import { NextResponse } from "next/server";
 import { chatRequestSchema } from "@/lib/schemas";
 import { runChatCompletion } from "@/server/ai-chat.functions";
@@ -7,7 +8,13 @@ export async function POST(request: Request) {
   const user = await getAuthenticatedUser(request.headers.get("authorization"));
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const body = await request.json();
+  let body: unknown;
+  try {
+    body = await readJsonBody(request);
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "JSON inválido" }, { status: 400 });
+  }
+
   const parsed = chatRequestSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid request", details: parsed.error.flatten() }, { status: 400 });

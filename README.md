@@ -10,8 +10,8 @@ Sistema inteligente de orquestração de agentes IA especializado para engenheir
 - API `POST /api/chat` com autenticação Supabase JWT, rate limit opcional Upstash, camadas de prompt, Lovable AI Gateway, guardrails, persistência e métricas.
 - API `GET/POST /api/conversations` para histórico básico.
 - API `POST /api/feedback` para loop de avaliação.
-- API `GET /api/metrics` para dashboards administrativos.
-- Supabase migration com conversas, mensagens, feedback, prompts versionados, perfis, anexos/RAG, métricas, eventos de segurança, views e notificações.
+- API `GET /api/metrics` para dashboards administrativos com allowlist `ADMIN_EMAILS`.
+- Supabase migration com conversas, mensagens, feedback, prompts versionados, perfis, anexos/RAG, métricas, eventos de segurança, views `security_invoker` e notificações.
 - Edge Function `chat-stream` como base SSE para deploy no Supabase.
 
 ## Agentes
@@ -66,6 +66,7 @@ UPSTASH_REDIS_REST_URL=https://your-instance.upstash.io
 UPSTASH_REDIS_REST_TOKEN=your-token
 LOVABLE_AI_KEY=your-lovable-key
 LOVABLE_AI_GATEWAY_URL=https://ai.gateway.lovable.dev/v1/chat/completions
+ADMIN_EMAILS=adminmaster@engenheiro.ai
 ```
 
 Sem `LOVABLE_AI_KEY`, o backend retorna uma resposta demonstrativa para facilitar desenvolvimento local.
@@ -106,3 +107,10 @@ curl -X POST http://localhost:3000/api/chat \
   -H "Content-Type: application/json" \
   -d '{"conversation_id":"UUID","agent_id":"senior","message":"Revise os riscos desta proposta."}'
 ```
+
+## Hardening recente
+
+- Mensagens e feedback agora verificam propriedade da conversa/mensagem no backend antes de inserir via service role.
+- Roteamento emitido pelo modelo é validado e normalizado antes de persistir ou gerar métricas.
+- Métricas brutas permanecem service-role only; admins acessam agregados pela API.
+- A RPC `get_conversation_with_history` respeita `auth.uid()` e limita o histórico retornado.

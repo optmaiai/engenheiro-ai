@@ -26,7 +26,7 @@ export interface GuardrailResult {
 
 function maskPII(content: string): string {
   // CPF: 123.456.789-10 → ***.***.***.** 
-  content = content.replace(/\d{3}\.\d{3}\.\d{3}-\d{2}/g, "***.***.***.** ");
+  content = content.replace(/\d{3}\.\d{3}\.\d{3}-\d{2}/g, "***.***.***-**");
 
   // CNPJ: 12.345.678/0001-90 → **.***.***/****-**
   content = content.replace(/\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}/g, "**.***.***/****-**");
@@ -134,12 +134,13 @@ export function guardrailCreditCardDetection(
   content: string
 ): { passed: boolean; cards_detected?: number; action?: string } {
   // Pattern: 13-19 digits (with or without spaces/dashes)
-  const cardPattern = /\b(\d{4}[\s\-]?){3}\d{4}\b/g;
+  const cardPattern = /(?<!\d)(?:\d[ -]?){13,19}(?!\d)/g;
   const matches = content.match(cardPattern) || [];
 
   let validCards = 0;
   for (const match of matches) {
-    if (luhnCheck(match)) {
+    const digits = match.replace(/\D/g, "");
+    if (luhnCheck(digits)) {
       validCards++;
     }
   }
@@ -207,10 +208,7 @@ export function guardrailDisclaimerRequired(
     return { passed: true };
   }
 
-  if (
-    !content.includes("orientativa") &&
-    !content.includes("profissional habilitado")
-  ) {
+  if (!content.includes(disclaimer.trim())) {
     return {
       passed: true,
       action: "disclaimer_appended",
@@ -219,6 +217,44 @@ export function guardrailDisclaimerRequired(
   }
 
   return { passed: true };
+}
+
+
+function extractFirstJsonObject(content: string): string | null {
+  const firstBrace = content.indexOf("{");
+  if (firstBrace === -1) return null;
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = firstBrace; i < content.length; i++) {
+    const char = content[i];
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+
+    if (char === "\\") {
+      escaped = true;
+      continue;
+    }
+
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+
+    if (inString) continue;
+
+    if (char === "{") depth++;
+    if (char === "}") depth--;
+
+    if (depth === 0) return content.slice(firstBrace, i + 1);
+  }
+
+  return null;
 }
 
 // ========================================================================
@@ -234,9 +270,9 @@ export async function guardrailJsonValidation(
   validated_data?: unknown;
   retry_needed?: boolean;
 }> {
-  // Tentar extrair JSON do content
-  const jsonMatch = content.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) {
+  // Tentar extrair o primeiro objeto JSON balanceado do content
+  const jsonCandidate = extractFirstJsonObject(content);
+  if (!jsonCandidate) {
     return {
       passed: false,
       action: "json_not_found",
@@ -245,7 +281,7 @@ export async function guardrailJsonValidation(
   }
 
   try {
-    const parsed = JSON.parse(jsonMatch[0]);
+    const parsed = JSON.parse(jsonCandidate);
     const validated = schema.parse(parsed);
     return {
       passed: true,

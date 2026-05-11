@@ -1,5 +1,6 @@
 import { Redis } from "@upstash/redis";
-import { getAgent } from "@/lib/agents";
+import { getAgent, isAgentId } from "@/lib/agents";
+import { routingSchema } from "@/lib/schemas";
 import { buildMessages, detectPromptInjection } from "./ai-security";
 import { executeGuardrailsPipeline } from "./ai-output-guards";
 import { createCompletion } from "./lovable-client";
@@ -55,9 +56,37 @@ async function enforceRateLimit(userId: string, conversationId?: string) {
 }
 
 function extractRouting(content: string) {
-  const match = content.match(/ROUTING:\s*(\{[\s\S]*?\})/);
+  const match = content.match(/ROUTING:\s*(\{[^\n]*\})/);
   if (!match) return { handoff_to: [], reason: "Sem roteamento informado", confidence: 0 };
-  return JSON.parse(match[1]) as { handoff_to: string[]; reason: string; confidence: number };
+
+  try {
+    const parsed = routingSchema.safeParse(JSON.parse(match[1]));
+    if (parsed.success) return parsed.data;
+  } catch {
+    // Retorna fallback seguro quando o modelo emite JSON de roteamento inválido.
+  }
+
+  return { handoff_to: [], reason: "Roteamento inválido normalizado pelo backend", confidence: 0 };
+}
+
+async function ensureConversationOwnership(
+  supabase: ReturnType<typeof createServiceClient>,
+  conversationId: string,
+  userId: string
+) {
+  const { data, error } = await supabase
+    .from("conversations")
+    .select("id")
+    .eq("id", conversationId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data) throw new Error("Conversa não encontrada ou não pertence ao usuário autenticado.");
+}
+
+function normalizeHandoffs(handoffs: string[]): string[] {
+  return Array.from(new Set(handoffs.filter(isAgentId)));
 }
 
 export async function runChatCompletion(input: ChatInput): Promise<ChatResult> {
@@ -72,6 +101,10 @@ export async function runChatCompletion(input: ChatInput): Promise<ChatResult> {
   const agent = getAgent(input.agentId);
 
   let conversationId = input.conversationId;
+  if (conversationId) {
+    await ensureConversationOwnership(supabase, conversationId, input.userId);
+  }
+
   if (!conversationId) {
     const { data, error } = await supabase
       .from("conversations")
@@ -91,7 +124,7 @@ export async function runChatCompletion(input: ChatInput): Promise<ChatResult> {
   });
   if (userMessageError) throw userMessageError;
 
-  const [{ data: prompt }, { data: profile }, { data: history }] = await Promise.all([
+  const [promptResult, profileResult, historyResult] = await Promise.all([
     supabase.from("agent_prompts").select("content, model_override").eq("agent_id", agent.id).eq("is_active", true).maybeSingle(),
     supabase.from("user_engineer_profile").select("*").eq("user_id", input.userId).maybeSingle(),
     supabase
@@ -101,6 +134,14 @@ export async function runChatCompletion(input: ChatInput): Promise<ChatResult> {
       .order("created_at", { ascending: false })
       .limit(12)
   ]);
+
+  if (promptResult.error) throw promptResult.error;
+  if (profileResult.error) throw profileResult.error;
+  if (historyResult.error) throw historyResult.error;
+
+  const prompt = promptResult.data;
+  const profile = profileResult.data;
+  const history = historyResult.data;
 
   const model = (prompt?.model_override as string | null) || agent.defaultModel;
   await recordRequestStart(conversationId, input.userId, agent.id, model);
@@ -128,6 +169,7 @@ export async function runChatCompletion(input: ChatInput): Promise<ChatResult> {
     }
 
     const routingJson = extractRouting(guarded.sanitized_content);
+    const handoffs = normalizeHandoffs(routingJson.handoff_to || []);
     const latencyMs = Date.now() - startedAt;
 
     const { data: assistantMessage, error: assistantMessageError } = await supabase
@@ -139,7 +181,7 @@ export async function runChatCompletion(input: ChatInput): Promise<ChatResult> {
         role: "assistant",
         model: completion.model,
         content: guarded.sanitized_content,
-        routing_json: routingJson,
+        routing_json: { ...routingJson, handoff_to: handoffs },
         tokens_in: completion.tokensIn,
         tokens_out: completion.tokensOut,
         latency_ms: latencyMs,
@@ -160,16 +202,22 @@ export async function runChatCompletion(input: ChatInput): Promise<ChatResult> {
       completion.costUsd
     );
 
-    for (const toAgent of routingJson.handoff_to || []) {
+    for (const toAgent of handoffs) {
       await recordRoutingEmitted(conversationId, input.userId, agent.id, toAgent, routingJson.confidence || 0);
     }
+
+    await supabase
+      .from("conversations")
+      .update({ updated_at: new Date().toISOString(), agent_id: agent.id })
+      .eq("id", conversationId)
+      .eq("user_id", input.userId);
 
     return {
       conversation_id: conversationId,
       message_id: assistantMessage.id as string,
       agent_id: agent.id,
       content: guarded.sanitized_content,
-      routing_json: routingJson,
+      routing_json: { ...routingJson, handoff_to: handoffs },
       guardrails_triggered: guarded.guardrails_triggered,
       model: completion.model,
       latency_ms: latencyMs

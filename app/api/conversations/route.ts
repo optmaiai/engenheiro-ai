@@ -1,3 +1,4 @@
+import { readJsonBody } from "@/server/http";
 import { NextResponse } from "next/server";
 import { createConversationSchema } from "@/lib/schemas";
 import { createServiceClient, getAuthenticatedUser } from "@/server/supabase";
@@ -22,7 +23,14 @@ export async function POST(request: Request) {
   const user = await getAuthenticatedUser(request.headers.get("authorization"));
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const parsed = createConversationSchema.safeParse(await request.json());
+  let body: unknown;
+  try {
+    body = await readJsonBody(request);
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "JSON inválido" }, { status: 400 });
+  }
+
+  const parsed = createConversationSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid request", details: parsed.error.flatten() }, { status: 400 });
   }
