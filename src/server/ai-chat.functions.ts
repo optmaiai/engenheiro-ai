@@ -1,6 +1,7 @@
 import { Redis } from "@upstash/redis";
 import { getAgent, isAgentId } from "@/lib/agents";
 import { routingSchema } from "@/lib/schemas";
+import { formatChunksForPrompt, rankChunksForQuery } from "./ai-rag";
 import { buildMessages, detectPromptInjection } from "./ai-security";
 import { executeGuardrailsPipeline } from "./ai-output-guards";
 import { createCompletion } from "./lovable-client";
@@ -124,7 +125,7 @@ export async function runChatCompletion(input: ChatInput): Promise<ChatResult> {
   });
   if (userMessageError) throw userMessageError;
 
-  const [promptResult, profileResult, historyResult] = await Promise.all([
+  const [promptResult, profileResult, historyResult, attachmentChunksResult] = await Promise.all([
     supabase.from("agent_prompts").select("content, model_override").eq("agent_id", agent.id).eq("is_active", true).maybeSingle(),
     supabase.from("user_engineer_profile").select("*").eq("user_id", input.userId).maybeSingle(),
     supabase
@@ -132,16 +133,33 @@ export async function runChatCompletion(input: ChatInput): Promise<ChatResult> {
       .select("role, content")
       .eq("conversation_id", conversationId)
       .order("created_at", { ascending: false })
-      .limit(12)
+      .limit(12),
+    supabase
+      .from("attachment_chunks")
+      .select("content,chunk_index,page_number,attachments!inner(filename,conversation_id)")
+      .eq("attachments.conversation_id", conversationId)
+      .limit(80)
   ]);
 
   if (promptResult.error) throw promptResult.error;
   if (profileResult.error) throw profileResult.error;
   if (historyResult.error) throw historyResult.error;
+  if (attachmentChunksResult.error) throw attachmentChunksResult.error;
 
   const prompt = promptResult.data;
   const profile = profileResult.data;
   const history = historyResult.data;
+  const rankedAttachmentChunks = rankChunksForQuery(
+    (attachmentChunksResult.data || []).map((chunk: Record<string, unknown>) => ({
+      content: String(chunk.content || ""),
+      chunk_index: chunk.chunk_index as number | undefined,
+      page_number: chunk.page_number as number | null | undefined,
+      filename: (chunk.attachments as { filename?: string } | null)?.filename
+    })),
+    input.message,
+    6
+  );
+  const attachmentContext = formatChunksForPrompt(rankedAttachmentChunks);
 
   const model = (prompt?.model_override as string | null) || agent.defaultModel;
   await recordRequestStart(conversationId, input.userId, agent.id, model);
@@ -156,6 +174,7 @@ export async function runChatCompletion(input: ChatInput): Promise<ChatResult> {
         agentId: agent.id,
         activePrompt: prompt?.content as string | undefined,
         userProfile: profile as Record<string, unknown> | null,
+        sessionContext: attachmentContext || undefined,
         history: orderedHistory
       },
       input.message

@@ -9,6 +9,8 @@ const requiredFiles = [
   "app/api/profile/route.ts",
   "app/api/admin/prompts/route.ts",
   "app/api/admin/prompts/[promptId]/route.ts",
+  "app/api/conversations/[conversationId]/attachments/route.ts",
+  "app/api/attachments/[attachmentId]/chunks/route.ts",
   "src/server/ai-chat.functions.ts",
   "src/server/ai-output-guards.ts",
   "src/server/ai-security.ts",
@@ -48,6 +50,7 @@ for (const expected of [
   "normalizeHandoffs",
   "routingSchema.safeParse",
   "Roteamento inválido normalizado pelo backend",
+  "rankChunksForQuery",
 ]) {
   if (!chat.includes(expected)) {
     throw new Error(`Chat backend não contém hardening esperado: ${expected}`);
@@ -65,6 +68,20 @@ const adminPromptDetailRoute = readFileSync("app/api/admin/prompts/[promptId]/ro
 for (const expected of ["updateAgentPromptSchema", "isAdminEmail", "promptId inválido"]) {
   if (!adminPromptDetailRoute.includes(expected)) {
     throw new Error(`Admin prompt detail route não contém comportamento esperado: ${expected}`);
+  }
+}
+
+const attachmentRoute = readFileSync("app/api/conversations/[conversationId]/attachments/route.ts", "utf8");
+for (const expected of ["ingestAttachmentSchema", "chunkText", "attachment_chunks", "ensureConversationOwner"]) {
+  if (!attachmentRoute.includes(expected)) {
+    throw new Error(`Attachment route não contém comportamento esperado: ${expected}`);
+  }
+}
+
+const attachmentChunksRoute = readFileSync("app/api/attachments/[attachmentId]/chunks/route.ts", "utf8");
+for (const expected of ["searchAttachmentChunksSchema", "ensureAttachmentOwner", "score"]) {
+  if (!attachmentChunksRoute.includes(expected)) {
+    throw new Error(`Attachment chunks route não contém comportamento esperado: ${expected}`);
   }
 }
 

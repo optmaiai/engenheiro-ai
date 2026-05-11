@@ -10,6 +10,7 @@ Sistema inteligente de orquestração de agentes IA especializado para engenheir
 - API `POST /api/chat` com autenticação Supabase JWT, rate limit opcional Upstash, camadas de prompt, Lovable AI Gateway, guardrails, persistência e métricas.
 - API `GET/POST /api/conversations` para histórico básico e `GET/PATCH/DELETE /api/conversations/:id` para detalhe, edição e arquivamento lógico.
 - API `GET/PUT /api/profile` para memória técnica do engenheiro.
+- API `GET/POST /api/conversations/:id/attachments` e `GET /api/attachments/:id/chunks` para ingestão textual e busca simples em anexos/RAG.
 - API `POST /api/feedback` para loop de avaliação.
 - API `GET /api/metrics` e `GET/POST/PATCH /api/admin/prompts` para administração com allowlist `ADMIN_EMAILS`.
 - Supabase migration com conversas, mensagens, feedback, prompts versionados, perfis, anexos/RAG, métricas, eventos de segurança, views `security_invoker` e notificações.
@@ -121,6 +122,18 @@ curl -X PUT http://localhost:3000/api/profile \
   -d '{"crea_uf":"SP","especialidades":["estruturas"],"hora_tecnica_brl":250}'
 ```
 
+### Anexos e RAG textual
+
+```bash
+curl -X POST http://localhost:3000/api/conversations/UUID/attachments \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"filename":"memorial.txt","file_type":"txt","content":"Texto extraído do memorial de cálculo..."}'
+
+curl -X GET "http://localhost:3000/api/attachments/ATTACHMENT_UUID/chunks?q=carga%20vento&limit=5" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
 ### Prompts administrativos
 
 ```bash
@@ -153,3 +166,4 @@ curl -X POST http://localhost:3000/api/chat \
 - Roteamento emitido pelo modelo é validado e normalizado antes de persistir ou gerar métricas.
 - Métricas brutas permanecem service-role only; admins acessam agregados e versionamento de prompts pela API protegida por `ADMIN_EMAILS`.
 - A RPC `get_conversation_with_history` respeita `auth.uid()` e limita o histórico retornado.
+- O chat injeta no SYS-6 os trechos de anexos mais relevantes por busca lexical local antes da resposta do agente.

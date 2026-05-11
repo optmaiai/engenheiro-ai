@@ -67,6 +67,24 @@ export const updateAgentPromptSchema = z.object({
   message: "Informe pelo menos um campo para atualizar"
 });
 
+
+export const ingestAttachmentSchema = z.object({
+  filename: z.string().min(1).max(240),
+  file_type: z.string().min(1).max(20).default("txt"),
+  content: z.string().min(1).max(500000),
+  page_number: z.number().int().positive().optional(),
+  chunk_size: z.number().int().min(500).max(4000).default(1200),
+  overlap: z.number().int().min(0).max(1000).default(180)
+}).refine((value) => value.overlap < value.chunk_size, {
+  message: "overlap precisa ser menor que chunk_size",
+  path: ["overlap"]
+});
+
+export const searchAttachmentChunksSchema = z.object({
+  q: z.string().min(1).max(1000),
+  limit: z.number().int().min(1).max(20).default(6)
+});
+
 export const feedbackRequestSchema = z.object({
   message_id: z.string().uuid(),
   conversation_id: z.string().uuid(),
