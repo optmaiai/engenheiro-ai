@@ -13,6 +13,8 @@ type Conversation = {
 
 type ChatResponse = {
   conversation_id: string;
+  message_id: string;
+  agent_id: AgentId;
   content: string;
   routing_json?: unknown;
   guardrails_triggered?: unknown[];
@@ -70,6 +72,8 @@ export default function DashboardClient() {
   const [attachment, setAttachment] = useState<ApiState<unknown>>(emptyState);
   const [metricsDays, setMetricsDays] = useState(7);
   const [metrics, setMetrics] = useState<ApiState<DashboardMetricsPayload>>(emptyState);
+  const [feedbackNotes, setFeedbackNotes] = useState("");
+  const [feedback, setFeedback] = useState<ApiState<unknown>>(emptyState);
 
   const selectedAgent = useMemo(() => AGENTS[agentId], [agentId]);
 
@@ -165,6 +169,33 @@ export default function DashboardClient() {
     }
   }
 
+  async function submitFeedback(rating: -1 | 0 | 1) {
+    if (!chat.data?.message_id) {
+      setFeedback({ loading: false, error: "Envie uma mensagem e aguarde a resposta antes de avaliar." });
+      return;
+    }
+
+    setFeedback({ loading: true });
+    try {
+      const payload = await parseApiResponse<unknown>(
+        await fetch("/api/feedback", {
+          method: "POST",
+          headers: authHeaders(token),
+          body: JSON.stringify({
+            message_id: chat.data.message_id,
+            conversation_id: chat.data.conversation_id,
+            agent_id: chat.data.agent_id,
+            rating,
+            notes: feedbackNotes || undefined
+          })
+        })
+      );
+      setFeedback({ loading: false, data: payload });
+    } catch (error) {
+      setFeedback({ loading: false, error: error instanceof Error ? error.message : "Erro desconhecido" });
+    }
+  }
+
   return (
     <main className="mx-auto min-h-screen max-w-7xl px-6 py-10 text-slate-100">
       <section className="mb-8 rounded-3xl border border-cyan-400/20 bg-slate-950/70 p-6 shadow-2xl shadow-cyan-950/30">
@@ -237,6 +268,13 @@ export default function DashboardClient() {
           </div>
 
           <ResultPanel title="Resposta do agente" state={chat} />
+          <FeedbackPanel
+            disabled={!token || !chat.data?.message_id || feedback.loading}
+            notes={feedbackNotes}
+            onNotesChange={setFeedbackNotes}
+            onSubmit={submitFeedback}
+            state={feedback}
+          />
         </form>
 
         <aside className="space-y-6">
@@ -313,6 +351,46 @@ export default function DashboardClient() {
   );
 }
 
+
+
+function FeedbackPanel({
+  disabled,
+  notes,
+  onNotesChange,
+  onSubmit,
+  state
+}: {
+  disabled: boolean;
+  notes: string;
+  onNotesChange: (notes: string) => void;
+  onSubmit: (rating: -1 | 0 | 1) => void;
+  state: ApiState<unknown>;
+}) {
+  return (
+    <section className="mt-5 rounded-2xl border border-white/10 bg-slate-950/70 p-4">
+      <h3 className="text-sm font-semibold uppercase tracking-wide text-cyan-300">Feedback da resposta</h3>
+      <p className="mt-2 text-xs leading-5 text-slate-400">Registre se a última resposta ajudou. Esse loop alimenta métricas por agente.</p>
+      <textarea
+        className="mt-3 h-20 w-full rounded-xl border border-slate-700 bg-slate-900 p-3 text-xs text-slate-100"
+        placeholder="Observações ou correções opcionais"
+        value={notes}
+        onChange={(event) => onNotesChange(event.target.value)}
+      />
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button className="rounded-lg bg-emerald-300 px-3 py-2 text-xs font-semibold text-slate-950" disabled={disabled} type="button" onClick={() => onSubmit(1)}>
+          👍 Útil
+        </button>
+        <button className="rounded-lg bg-slate-200 px-3 py-2 text-xs font-semibold text-slate-950" disabled={disabled} type="button" onClick={() => onSubmit(0)}>
+          Neutro
+        </button>
+        <button className="rounded-lg bg-red-300 px-3 py-2 text-xs font-semibold text-slate-950" disabled={disabled} type="button" onClick={() => onSubmit(-1)}>
+          👎 Corrigir
+        </button>
+      </div>
+      <ResultPanel title="Status do feedback" state={state} compact />
+    </section>
+  );
+}
 
 function MetricsSummary({ metrics }: { metrics?: DashboardMetricsPayload["metrics"] }) {
   if (!metrics) return null;
