@@ -77,9 +77,20 @@ Sem `LOVABLE_AI_KEY`, o backend retorna uma resposta demonstrativa para facilita
 
 ```bash
 npm run dev
+npm test
 npm run typecheck
 npm run lint
 npm run build
+npm run check:static
+```
+
+## Testes automatizados
+
+A suíte unitária cobre guardrails, schemas críticos e helpers RAG com Vitest. O sanity check valida invariantes estáticos de rotas, SQL e hardening antes de deploy.
+
+```bash
+npm test
+npm run check:static
 ```
 
 ## Deploy
