@@ -3,12 +3,11 @@
  * Observability for AI agent system performance
  */
 
-import { createClient } from "@supabase/supabase-js";
+import { createServiceClient } from "./supabase";
 
-const supabase = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+function getSupabase() {
+  return createServiceClient();
+}
 
 // ========================================================================
 // METRIC RECORDING HELPERS
@@ -31,7 +30,7 @@ export async function recordRequestStart(
   agentId: string,
   model: string
 ) {
-  const { error } = await supabase.from("ai_metrics").insert([
+  const { error } = await getSupabase().from("ai_metrics").insert([
     {
       event_type: "request_started",
       agent_id: agentId,
@@ -58,7 +57,7 @@ export async function recordRequestComplete(
   tokensOut: number,
   costUsd: number
 ) {
-  const { error } = await supabase.from("ai_metrics").insert([
+  const { error } = await getSupabase().from("ai_metrics").insert([
     {
       event_type: "request_completed",
       agent_id: agentId,
@@ -87,7 +86,7 @@ export async function recordRequestFailed(
   errorMessage: string,
   retryCount: number = 0
 ) {
-  const { error } = await supabase.from("ai_metrics").insert([
+  const { error } = await getSupabase().from("ai_metrics").insert([
     {
       event_type: "request_failed",
       agent_id: agentId,
@@ -113,7 +112,7 @@ export async function recordRoutingEmitted(
   toAgent: string,
   confidence: number
 ) {
-  const { error } = await supabase.from("ai_metrics").insert([
+  const { error } = await getSupabase().from("ai_metrics").insert([
     {
       event_type: "routing_emitted",
       from_agent: fromAgent,
@@ -137,7 +136,7 @@ export async function recordRoutingFollowed(
   fromAgent: string,
   toAgent: string
 ) {
-  const { error } = await supabase.from("ai_metrics").insert([
+  const { error } = await getSupabase().from("ai_metrics").insert([
     {
       event_type: "routing_followed",
       from_agent: fromAgent,
@@ -162,7 +161,7 @@ export async function recordGuardrailTriggered(
   guardAction: string,
   agentId?: string
 ) {
-  const { error } = await supabase.from("ai_metrics").insert([
+  const { error } = await getSupabase().from("ai_metrics").insert([
     {
       event_type: "guardrail_triggered",
       agent_id: agentId,
@@ -215,6 +214,8 @@ export async function getDashboardMetrics(
   const startDate = new Date();
   startDate.setDate(startDate.getDate() - daysBack);
 
+  const supabase = getSupabase();
+
   // Completed requests
   const { data: completedRequests } = await supabase
     .from("ai_metrics")
@@ -263,19 +264,19 @@ export async function getDashboardMetrics(
   const totalRequests = (completedRequests?.length || 0) +
     (failedRequests?.length || 0);
   const totalTokens = (completedRequests || []).reduce(
-    (sum, r: Record<string, unknown>) => sum + ((r.tokens_in as number) || 0) + ((r.tokens_out as number) || 0),
+    (sum: number, r: Record<string, unknown>) => sum + ((r.tokens_in as number) || 0) + ((r.tokens_out as number) || 0),
     0
   );
   const totalCost = (completedRequests || []).reduce(
-    (sum, r: Record<string, unknown>) => sum + ((r.cost_usd as number) || 0),
+    (sum: number, r: Record<string, unknown>) => sum + ((r.cost_usd as number) || 0),
     0
   );
 
   const latencies = (completedRequests || [])
     .map((r: Record<string, unknown>) => r.latency_ms as number)
-    .sort((a, b) => a - b);
+    .sort((a: number, b: number) => a - b);
   const avgLatency =
-    latencies.reduce((a, b) => a + b, 0) / latencies.length;
+    latencies.reduce((a: number, b: number) => a + b, 0) / latencies.length;
   const p50Latency = latencies[Math.floor(latencies.length * 0.5)];
   const p95Latency = latencies[Math.floor(latencies.length * 0.95)];
 
@@ -354,6 +355,8 @@ export async function getAgentPerformance(
   const startDate = new Date();
   startDate.setDate(startDate.getDate() - daysBack);
 
+  const supabase = getSupabase();
+
   const { data: requests } = await supabase
     .from("ai_metrics")
     .select("*")
@@ -391,9 +394,9 @@ export async function getAgentPerformance(
   const totalTests = (requests?.length || 0) + (failures?.length || 0);
   const successRate = totalTests > 0 ? ((requests?.length || 0) / totalTests) * 100 : 0;
 
-  const feedbackRatings = feedback?.map((f) => f.rating) || [];
-  const positiveCount = feedbackRatings.filter((r) => r === 1).length;
-  const negativeCount = feedbackRatings.filter((r) => r === -1).length;
+  const feedbackRatings = feedback?.map((f: { rating: number }) => f.rating) || [];
+  const positiveCount = feedbackRatings.filter((r: number) => r === 1).length;
+  const negativeCount = feedbackRatings.filter((r: number) => r === -1).length;
   const totalFeedback = feedbackRatings.length;
 
   return {
@@ -415,6 +418,7 @@ export async function getAgentPerformance(
 export async function getCostByModel(daysBack: number = 7) {
   const startDate = new Date();
   startDate.setDate(startDate.getDate() - daysBack);
+  const supabase = getSupabase();
 
   const { data } = await supabase
     .from("ai_metrics")
@@ -450,6 +454,7 @@ export async function getCostByModel(daysBack: number = 7) {
 export async function getFeedbackSummaryByAgent(daysBack: number = 7) {
   const startDate = new Date();
   startDate.setDate(startDate.getDate() - daysBack);
+  const supabase = getSupabase();
 
   const { data } = await supabase
     .from("ai_feedback")
